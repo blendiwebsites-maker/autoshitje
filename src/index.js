@@ -24,7 +24,7 @@ async function user(req,db){const token=cookie(req).as_session;if(!token)return 
 const sessionCookie=(token,max=604800)=>`as_session=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${max}`;
 async function body(req){if(Number(req.headers.get('content-length')||0)>150000)return null;try{return await req.json()}catch{return null}}
 function sameOrigin(req){try{return new URL(req.headers.get('origin')).origin===new URL(req.url).origin}catch{return false}}
-const safeCar=r=>({id:r.id,brand:r.brand,model:r.model,year:r.year,km:r.km,price:r.price,city:r.city,fuel:r.fuel,gear:r.gear,description:r.description,phone:r.phone,photo_key:r.photo_key,created_at:r.created_at,seller:r.seller});
+const safeCar=r=>({id:r.id,brand:r.brand,model:r.model,year:r.year,km:r.km,price:r.price,city:r.city,fuel:r.fuel,gear:r.gear,description:r.description,phone:r.phone,photo_key:r.photo_key,photos:r.photos||[],created_at:r.created_at,seller:r.seller,seller_id:r.user_id});
 export default {async fetch(req,env){const url=new URL(req.url),p=url.pathname,method=req.method;
 if(p==='/api/health')return out({ok:true,project:'AutoShitje',database:!!env.DB,mode:'accounts-and-listings',photos:!!env.PHOTOS,build:'pbkdf2-worker-fix'});
 if(!p.startsWith('/api/'))return env.ASSETS.fetch(req);
@@ -44,12 +44,16 @@ if(p==='/api/auth/login'&&method==='POST'){
 }
 if(p==='/api/auth/me'&&method==='GET')return out({user:await user(req,env.DB)});
 if(p==='/api/auth/logout'&&method==='POST'){const t=cookie(req).as_session;if(t)await env.DB.prepare('DELETE FROM as_sessions WHERE token_hash=?').bind(await sha(t)).run();return out({ok:true},200,{'set-cookie':sessionCookie('',0)})}
+if(p==='/api/dealers'&&method==='GET'){
+ const r=await env.DB.prepare("SELECT u.id,u.name,COUNT(c.id) AS car_count FROM as_users u LEFT JOIN as_cars c ON c.user_id=u.id AND c.status='active' WHERE u.role='autosallon' GROUP BY u.id,u.name ORDER BY car_count DESC,u.name ASC LIMIT 200").all();return out({dealers:r.results||[]});
+}
+async function attachPhotos(rows){if(!rows.length)return rows;const ids=rows.map(x=>x.id);const marks=ids.map(()=>'?').join(',');const found=await env.DB.prepare(`SELECT car_id,photo_key FROM as_car_photos WHERE car_id IN (${marks}) ORDER BY position ASC,created_at ASC`).bind(...ids).all();const by=new Map();for(const x of found.results||[]){if(!by.has(x.car_id))by.set(x.car_id,[]);by.get(x.car_id).push(x.photo_key)}return rows.map(r=>({...r,photos:by.get(r.id)|| (r.photo_key?[r.photo_key]:[])}))}
 if(p==='/api/cars'&&method==='GET'){
  const limit=Math.min(48,Math.max(1,Number(url.searchParams.get('limit'))||24));let sql='SELECT c.*,u.name AS seller FROM as_cars c JOIN as_users u ON c.user_id=u.id WHERE c.status=\'active\'';const args=[];
  for(const k of ['brand','city']){const v=str(url.searchParams.get(k),70);if(v){sql+=` AND c.${k}=?`;args.push(v)}}sql+=' ORDER BY c.created_at DESC LIMIT ?';args.push(limit);
- const result=await env.DB.prepare(sql).bind(...args).all();return out({cars:(result.results||[]).map(safeCar)});
+ const result=await env.DB.prepare(sql).bind(...args).all();return out({cars:(await attachPhotos(result.results||[])).map(safeCar)});
 }
-if(p==='/api/cars/mine'&&method==='GET'){const u=await user(req,env.DB);if(!u)return out({error:'Kyçu së pari.'},401);const r=await env.DB.prepare('SELECT c.*,u.name AS seller FROM as_cars c JOIN as_users u ON u.id=c.user_id WHERE c.user_id=? ORDER BY c.created_at DESC').bind(u.id).all();return out({cars:(r.results||[]).map(safeCar)})}
+if(p==='/api/cars/mine'&&method==='GET'){const u=await user(req,env.DB);if(!u)return out({error:'Kyçu së pari.'},401);const r=await env.DB.prepare('SELECT c.*,u.name AS seller FROM as_cars c JOIN as_users u ON u.id=c.user_id WHERE c.user_id=? ORDER BY c.created_at DESC').bind(u.id).all();return out({cars:(await attachPhotos(r.results||[])).map(safeCar)})}
 if(p==='/api/cars'&&method==='POST'){
  const u=await user(req,env.DB);if(!u)return out({error:'Kyçu së pari.'},401);const b=await body(req);if(!b)return out({error:'Invalid request'},400);
  const brand=str(b.brand,70),model=str(b.model,70),city=str(b.city,70),year=Number(b.year),km=Number(b.km),price=Number(b.price),phone=str(b.phone,35),fuel=str(b.fuel,40),gear=str(b.gear,40),description=str(b.description,2500);
@@ -65,10 +69,13 @@ if(pm&&method==='POST'){
  const data=await req.arrayBuffer();if(data.byteLength>4*1024*1024||data.byteLength<100)return out({error:'Fotografia duhet të jetë deri në 4 MB.'},413);
  const bytes=new Uint8Array(data);const valid=type==='image/jpeg'?bytes[0]===255&&bytes[1]===216:type==='image/png'?bytes[0]===137&&bytes[1]===80:bytes[0]===82&&bytes[1]===73&&bytes[8]===87;
  if(!valid)return out({error:'Format i pavlefshëm.'},415);
- const key=`cars/${pm[1]}/${id()}`;await env.PHOTOS.put(key,data,{httpMetadata:{contentType:type}});await env.DB.prepare('UPDATE as_cars SET photo_key=? WHERE id=?').bind(key,pm[1]).run();return out({ok:true,key});
+ const count=await env.DB.prepare('SELECT COUNT(*) AS n FROM as_car_photos WHERE car_id=?').bind(pm[1]).first();if(count.n>=10)return out({error:'Maksimumi është 10 fotografi.'},409);
+ const key=`cars/${pm[1]}/${id()}`;await env.PHOTOS.put(key,data,{httpMetadata:{contentType:type}});
+ try{await env.DB.prepare('INSERT INTO as_car_photos (id,car_id,photo_key,position) VALUES (?,?,?,?)').bind(id(),pm[1],key,count.n).run();if(count.n===0)await env.DB.prepare('UPDATE as_cars SET photo_key=? WHERE id=?').bind(key,pm[1]).run()}catch(e){await env.PHOTOS.delete(key);throw e}return out({ok:true,key,count:count.n+1});
 }
-const photo=p.match(/^\/api\/photos\/([0-9a-f-]{36})$/);if(photo&&method==='GET'){
- if(!env.PHOTOS)return out({error:'Photos unavailable'},503);const car=await env.DB.prepare('SELECT photo_key FROM as_cars WHERE id=? AND status=\'active\'').bind(photo[1]).first();if(!car?.photo_key)return out({error:'Photo missing'},404);const obj=await env.PHOTOS.get(car.photo_key);if(!obj)return out({error:'Photo missing'},404);return new Response(obj.body,{headers:{'content-type':obj.httpMetadata?.contentType||'image/jpeg','cache-control':'public, max-age=3600','x-content-type-options':'nosniff'}})
+const photo=p.match(/^\/api\/photos\/([0-9a-f-]{36})(?:\/([0-9]))?$/);if(photo&&method==='GET'){
+ if(!env.PHOTOS)return out({error:'Photos unavailable'},503);const car=await env.DB.prepare("SELECT id,photo_key FROM as_cars WHERE id=? AND status='active'").bind(photo[1]).first();if(!car)return out({error:'Photo missing'},404);
+ const index=Number(photo[2]||0);const pic=await env.DB.prepare('SELECT photo_key FROM as_car_photos WHERE car_id=? ORDER BY position ASC,created_at ASC LIMIT 1 OFFSET ?').bind(photo[1],index).first();const key=pic?.photo_key||(index===0?car.photo_key:null);if(!key)return out({error:'Photo missing'},404);const obj=await env.PHOTOS.get(key);if(!obj)return out({error:'Photo missing'},404);return new Response(obj.body,{headers:{'content-type':obj.httpMetadata?.contentType||'image/jpeg','cache-control':'public, max-age=3600','x-content-type-options':'nosniff'}})
 }
 return out({error:'Endpoint not found'},404);
 }catch(e){console.error('AutoShitje API error:',e);return out({error:'Server error. Kontrollo log-et.'},500)}
