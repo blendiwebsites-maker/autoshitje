@@ -5,3 +5,7 @@ CREATE INDEX IF NOT EXISTS as_sessions_user ON as_sessions(user_id);
 CREATE TABLE IF NOT EXISTS as_cars (id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES as_users(id),brand TEXT NOT NULL,model TEXT NOT NULL,year INTEGER NOT NULL,km INTEGER NOT NULL,price REAL NOT NULL,city TEXT NOT NULL,fuel TEXT,gear TEXT,phone TEXT NOT NULL,description TEXT,photo_key TEXT,status TEXT NOT NULL DEFAULT 'active',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
 CREATE INDEX IF NOT EXISTS as_cars_status_date ON as_cars(status,created_at DESC);
 CREATE INDEX IF NOT EXISTS as_cars_owner ON as_cars(user_id);
+
+-- New feature: up to ten photos per listing. Safe to run more than once.
+CREATE TABLE IF NOT EXISTS as_car_photos (id TEXT PRIMARY KEY,car_id TEXT NOT NULL REFERENCES as_cars(id) ON DELETE CASCADE,photo_key TEXT NOT NULL,position INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE INDEX IF NOT EXISTS as_car_photos_car ON as_car_photos(car_id,position);
