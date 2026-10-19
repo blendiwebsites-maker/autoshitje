@@ -1,2 +1,5 @@
 User-agent: *
 Allow: /
+Disallow: /admin.html
+Disallow: /api/
+Sitemap: https://autoshitje.blendiwebsites.workers.dev/sitemap.xml
