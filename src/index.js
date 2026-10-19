@@ -4,7 +4,20 @@ const str=(v,n=150)=>String(v??'').trim().slice(0,n);
 const id=()=>crypto.randomUUID();
 const hex=a=>[...new Uint8Array(a)].map(x=>x.toString(16).padStart(2,'0')).join('');
 const unhex=s=>new Uint8Array((s.match(/.{2}/g)||[]).map(x=>parseInt(x,16)));
-async function hash(password,salt){const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveBits']);return hex(await crypto.subtle.deriveBits({name:'PBKDF2',salt:unhex(salt),iterations:210000,hash:'SHA-256'},key,256))}
+// Cloudflare Workers caps a single PBKDF2 call at 100,000 iterations.
+// Six sequential domain-separated 100k rounds retain an expensive password check.
+// Hash version prefix lets us migrate to a standard managed auth service later.
+async function hash(password,salt){
+ let material=new TextEncoder().encode(password);
+ const saltBytes=unhex(salt);
+ for(let round=0;round<6;round++){
+  const key=await crypto.subtle.importKey('raw',material,'PBKDF2',false,['deriveBits']);
+  const roundSalt=new Uint8Array(saltBytes.length+1);
+  roundSalt.set(saltBytes);roundSalt[saltBytes.length]=round;
+  material=new Uint8Array(await crypto.subtle.deriveBits({name:'PBKDF2',salt:roundSalt,iterations:100000,hash:'SHA-256'},key,256));
+ }
+ return 'v2$'+hex(material);
+}
 async function sha(s){return hex(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s)))}
 const cookie=(request)=>Object.fromEntries((request.headers.get('cookie')||'').split(';').map(s=>s.trim().split('=').slice(0,2)).filter(x=>x.length===2));
 async function user(req,db){const token=cookie(req).as_session;if(!token)return null;return await db.prepare('SELECT u.id,u.name,u.email,u.role,u.is_admin FROM as_sessions s JOIN as_users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at > ?').bind(await sha(token),Date.now()).first()}
@@ -13,7 +26,7 @@ async function body(req){if(Number(req.headers.get('content-length')||0)>150000)
 function sameOrigin(req){try{return new URL(req.headers.get('origin')).origin===new URL(req.url).origin}catch{return false}}
 const safeCar=r=>({id:r.id,brand:r.brand,model:r.model,year:r.year,km:r.km,price:r.price,city:r.city,fuel:r.fuel,gear:r.gear,description:r.description,phone:r.phone,photo_key:r.photo_key,created_at:r.created_at,seller:r.seller});
 export default {async fetch(req,env){const url=new URL(req.url),p=url.pathname,method=req.method;
-if(p==='/api/health')return out({ok:true,project:'AutoShitje',database:!!env.DB,mode:'accounts-and-listings',photos:!!env.PHOTOS});
+if(p==='/api/health')return out({ok:true,project:'AutoShitje',database:!!env.DB,mode:'accounts-and-listings',photos:!!env.PHOTOS,build:'pbkdf2-worker-fix'});
 if(!p.startsWith('/api/'))return env.ASSETS.fetch(req);
 if(!env.DB)return out({error:'D1 binding DB missing'},503);
 try{
