@@ -11,3 +11,8 @@ binding = "ASSETS"
 binding = "DB"
 database_name = "autoshitje-db"
 database_id = "fd62c854-fe92-48a2-aecc-4e8bb3443eaa"
+
+# Optional: Create an R2 bucket named autoshitje-photos, then uncomment:
+# [[r2_buckets]]
+# binding = "PHOTOS"
+# bucket_name = "autoshitje-photos"
