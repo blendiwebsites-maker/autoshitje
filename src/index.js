@@ -22,7 +22,7 @@ if(p==='/api/auth/register'&&method==='POST'){
  const b=await body(req);if(!b)return out({error:'Invalid request'},400);const name=str(b.name,80),email=str(b.email,254).toLowerCase(),pass=String(b.password||''),role=b.role==='autosallon'?'autosallon':'privat';
  if(name.length<2||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||pass.length<12||pass.length>128)return out({error:'Emri, emaili ose fjalëkalimi nuk është valid (minimumi 12 karaktere).'},400);
  const salt=hex(crypto.getRandomValues(new Uint8Array(16)));const pw=await hash(pass,salt);const uid=id();
- try{await env.DB.prepare('INSERT INTO as_users (id,name,email,password_hash,salt,role) VALUES (?,?,?,?,?,?)').bind(uid,name,email,pw,salt,role).run()}catch{return out({error:'Ky email është i regjistruar.'},409)}
+ try{await env.DB.prepare('INSERT INTO as_users (id,name,email,password_hash,salt,role) VALUES (?,?,?,?,?,?)').bind(uid,name,email,pw,salt,role).run()}catch(e){console.error('AutoShitje registration insert failed:',e);if(String(e?.message||'').includes('UNIQUE constraint failed: as_users.email'))return out({error:'Ky email është i regjistruar.'},409);throw e}
  const token=id()+id();await env.DB.prepare('INSERT INTO as_sessions (token_hash,user_id,expires_at) VALUES (?,?,?)').bind(await sha(token),uid,Date.now()+604800000).run();return out({ok:true,user:{id:uid,name,email,role}},201,{'set-cookie':sessionCookie(token)});
 }
 if(p==='/api/auth/login'&&method==='POST'){
@@ -58,5 +58,5 @@ const photo=p.match(/^\/api\/photos\/([0-9a-f-]{36})$/);if(photo&&method==='GET'
  if(!env.PHOTOS)return out({error:'Photos unavailable'},503);const car=await env.DB.prepare('SELECT photo_key FROM as_cars WHERE id=? AND status=\'active\'').bind(photo[1]).first();if(!car?.photo_key)return out({error:'Photo missing'},404);const obj=await env.PHOTOS.get(car.photo_key);if(!obj)return out({error:'Photo missing'},404);return new Response(obj.body,{headers:{'content-type':obj.httpMetadata?.contentType||'image/jpeg','cache-control':'public, max-age=3600','x-content-type-options':'nosniff'}})
 }
 return out({error:'Endpoint not found'},404);
-}catch(e){return out({error:'Server error. Kontrollo migrimin D1 dhe konfigurimin.'},500)}
+}catch(e){console.error('AutoShitje API error:',e);return out({error:'Server error. Kontrollo log-et.'},500)}
 }};
