@@ -10,4 +10,4 @@ binding = "ASSETS"
 [[d1_databases]]
 binding = "DB"
 database_name = "autoshitje-db"
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_UUID"
+database_id = "fd62c854-fe92-48a2-aecc-4e8bb3443eaa"
