@@ -153,7 +153,7 @@ if(brandingUpload&&method==='POST'){
  if(!['image/jpeg','image/png','image/webp'].includes(type))return out({error:'Lejohen vetëm JPG, PNG ose WebP.'},415);
  const data=await req.arrayBuffer();if(data.byteLength<100||data.byteLength>4*1024*1024)return out({error:'Fotografia duhet të jetë 100 B deri 4 MB.'},413);
  const bytes=new Uint8Array(data);
-const valid=type==='image/jpeg'?bytes[0]===255&&bytes[1]===216&&bytes[2]===255:type==='image/png'?bytes[0]===137&&bytes[1]===80&&bytes[2]===78&&bytes[3]===71&&bytes[4]===13&&bytes[5]===10:type==='image/webp'?bytes[0]===82&&bytes[1]===73&&bytes[2]===70&&bytes[3]===70&&bytes[8]===87&&bytes[9]===69&&bytes[10]===66&&bytes[11]===80:false;
+ const valid=type==='image/jpeg'?bytes[0]===255&&bytes[1]===216&&bytes[2]===255:type==='image/png'?bytes[0]===137&&bytes[1]===80&&bytes[2]===78&&bytes[3]===71&&bytes[4]===13&&bytes[5]===10:type==='image/webp'?bytes[0]===82&&bytes[1]===73&&bytes[2]===70&&bytes[3]===70&&bytes[8]===87&&bytes[9]===69&&bytes[10]===66&&bytes[11]===80;
  if(!valid)return out({error:'Përmbajtja nuk përputhet me formatin e fotografisë.'},415);
  const previous=await env.DB.prepare(`SELECT ${kind}_url AS url FROM as_dealer_profiles WHERE user_id=?`).bind(u.id).first();
  const key=`dealers/${u.id}/${kind}/${id()}`;
