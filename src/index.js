@@ -281,7 +281,10 @@ if(ownEdit&&method==='POST'){
  const b=await body(req);if(!b||typeof b!=='object'||Array.isArray(b))return out({error:'Kërkesë e pavlefshme.'},400);
  const fields=[],values=[];
  if(Object.prototype.hasOwnProperty.call(b,'price')){const price=Number(b.price);if(!Number.isFinite(price)||price<=0||price>10000000)return out({error:'Çmimi nuk është valid.'},400);fields.push('price=?');values.push(price)}
- for(const [key,max] of [['description',2500],['phone',35]])if(Object.prototype.hasOwnProperty.call(b,key)){const value=str(b[key],max);if(key==='phone'&&value.length<5)return out({error:'Numri i telefonit nuk është valid.'},400);fields.push(key+'=?');values.push(value)}
+ for(const [key,max] of [['description',2500],['phone',35],['brand',70],['model',70],['city',70],['fuel',40],['gear',40],['category',35],['customs',45]])if(Object.prototype.hasOwnProperty.call(b,key)){const value=str(b[key],max);if(key==='phone'&&value.length<5)return out({error:'Numri i telefonit nuk është valid.'},400);fields.push(key+'=?');values.push(value)}
+ for(const key of ['year','km'])if(Object.prototype.hasOwnProperty.call(b,key)){const n=Number(b[key]);if(!Number.isInteger(n)||(key==='year'&&(n<1950||n>new Date().getFullYear()+1))||(key==='km'&&(n<0||n>3000000)))return out({error:'Viti ose kilometrat nuk janë validë.'},400);fields.push(key+'=?');values.push(n)}
+ if(Object.prototype.hasOwnProperty.call(b,'customs')&&!['','Me doganë të paguar','Pa doganë','Me regjistrim RKS'].includes(b.customs))return out({error:'Statusi i doganës nuk është valid.'},400);
+ if(Object.prototype.hasOwnProperty.call(b,'category')&&!['','SUV','Sedan','Hatchback','Coupe','Karavan','Pickup','Minivan','Cabrio','Tjetër'].includes(b.category))return out({error:'Kategoria nuk është valide.'},400);
  if(!fields.length)return out({error:'Nuk ka ndryshime.'},400);
  const result=await env.DB.prepare('UPDATE as_cars SET '+fields.join(',')+" WHERE id=? AND user_id=? AND status IN ('active','sold')").bind(...values,ownEdit[1],u.id).run();
  return result.meta?.changes?out({ok:true}):out({error:'Shpallja nuk u gjet.'},404);
