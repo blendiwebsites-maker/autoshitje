@@ -33,7 +33,7 @@ const brandSlug=p.match(/^\/vetura\/marka\/([a-z0-9-]+)$/);
 if(brandSlug){
  const brand=brandPages[brandSlug[1]];
  if(!brand)return new Response('Not found',{status:404});
- const page=await env.ASSETS.fetch(new Request(new URL('/index.html',url),req));
+ const page=await env.ASSETS.fetch(new Request(new URL('/',url),req));
  if(!page.ok)return page;
  // Empty brand pages must not be indexed.
  let count=0;
@@ -51,7 +51,7 @@ if(p==='/sitemap.xml'){
  return new Response(xml,{headers:{'content-type':'application/xml; charset=utf-8','cache-control':'public, max-age=900'}});
 }
 if(/^\/(vetura|autosallon)\/[a-z0-9-]+$/.test(p)){
- const res=await env.ASSETS.fetch(new Request(new URL('/index.html',url),req));if(!env.DB||!res.ok)return res;
+ const res=await env.ASSETS.fetch(new Request(new URL('/',url),req));if(!env.DB||!res.ok)return res;
  let title='AutoShitje — Platforma e veturave',description='Shiko shpallje veturash dhe autosallone në Kosovë.';
  try{if(p.startsWith('/vetura/')){const c=await env.DB.prepare("SELECT brand,model,year,price,city FROM as_cars WHERE id=? AND status='active'").bind(p.split('/')[2]).first();if(c){title=`${c.brand} ${c.model} ${c.year} — AutoShitje`;description=`${c.brand} ${c.model}, viti ${c.year}, ${c.price} €, ${c.city}. Shiko shpalljen në AutoShitje.`}}else{const d=await env.DB.prepare('SELECT u.name,p.city FROM as_dealer_profiles p JOIN as_users u ON u.id=p.user_id WHERE p.slug=?').bind(p.split('/')[2]).first();if(d){title=`${d.name} — AutoShitje`;description=`Shiko veturat e autosallonit ${d.name}, ${d.city||'Kosovë'}, në AutoShitje.`}}}catch(e){console.error('metadata',e)}
  const html=(await res.text()).replace(/<title>[^<]*<\/title>/,`<title>${title.replace(/[&<>"']/g,'')}</title>`).replace(/<meta name="description" content="[^"]*">/,`<meta name="description" content="${description.replace(/[&<>"']/g,'')}">`);
