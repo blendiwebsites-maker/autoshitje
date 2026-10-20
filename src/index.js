@@ -20,7 +20,7 @@ async function hash(password,salt){
 }
 async function sha(s){return hex(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s)))}
 const cookie=(request)=>Object.fromEntries((request.headers.get('cookie')||'').split(';').map(s=>s.trim().split('=').slice(0,2)).filter(x=>x.length===2));
-async function user(req,db){const token=cookie(req).as_session;if(!token)return null;return await db.prepare('SELECT u.id,u.name,u.email,u.role,u.is_admin FROM as_sessions s JOIN as_users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at > ?').bind(await sha(token),Date.now()).first()}
+async function user(req,db){const token=cookie(req).as_session;if(!token)return null;return await db.prepare('SELECT u.id,u.name,u.email,u.role,u.is_admin FROM as_sessions s JOIN as_users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at > ? AND NOT EXISTS (SELECT 1 FROM as_admin_suspensions x WHERE x.user_id=u.id)').bind(await sha(token),Date.now()).first()}
 const sessionCookie=(token,max=604800)=>`as_session=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${max}`;
 async function body(req){if(Number(req.headers.get('content-length')||0)>150000)return null;try{return await req.json()}catch{return null}}
 function sameOrigin(req){try{return new URL(req.headers.get('origin')).origin===new URL(req.url).origin}catch{return false}}
@@ -91,23 +91,34 @@ if(p.startsWith('/api/admin/')){
  if(p==='/api/admin/summary'&&method==='GET'){
   const [users,cars,dealers,active,sold]=await Promise.all([env.DB.prepare('SELECT COUNT(*) AS n FROM as_users').first(),env.DB.prepare('SELECT COUNT(*) AS n FROM as_cars').first(),env.DB.prepare("SELECT COUNT(*) AS n FROM as_users WHERE role='autosallon'").first(),env.DB.prepare("SELECT COUNT(*) AS n FROM as_cars WHERE status='active'").first(),env.DB.prepare("SELECT COUNT(*) AS n FROM as_cars WHERE status='sold'").first()]);return out({users:users.n,cars:cars.n,dealers:dealers.n,active:active.n,sold:sold.n});
  }
+ if(p==='/api/admin/audit'&&method==='GET'){
+  const r=await env.DB.prepare('SELECT action,target_type,target_id,details,created_at FROM as_admin_audit ORDER BY id DESC LIMIT 100').all();return out({events:r.results||[]});
+ }
  if(p==='/api/admin/users'&&method==='GET'){
-  const r=await env.DB.prepare('SELECT id,name,email,role,is_admin,created_at FROM as_users ORDER BY created_at DESC LIMIT 200').all();return out({users:r.results||[]});
+  const r=await env.DB.prepare('SELECT u.id,u.name,u.email,u.role,u.is_admin,u.created_at,CASE WHEN x.user_id IS NULL THEN 0 ELSE 1 END AS suspended FROM as_users u LEFT JOIN as_admin_suspensions x ON x.user_id=u.id ORDER BY u.created_at DESC LIMIT 200').all();return out({users:r.results||[]});
  }
  if(p==='/api/admin/cars'&&method==='GET'){
   const r=await env.DB.prepare('SELECT c.id,c.brand,c.model,c.status,c.created_at,u.email FROM as_cars c JOIN as_users u ON u.id=c.user_id ORDER BY c.created_at DESC LIMIT 200').all();return out({cars:r.results||[]});
  }
+ const userAction=p.match(/^\/api\/admin\/users\/([0-9a-f-]{36})\/suspension$/);
+ if(userAction&&method==='POST'){
+  const b=await body(req),uid=userAction[1];if(typeof b?.suspended!=='boolean')return out({error:'Vlerë e pavlefshme.'},400);
+  const target=await env.DB.prepare('SELECT id,is_admin FROM as_users WHERE id=?').bind(uid).first();if(!target)return out({error:'Përdoruesi nuk ekziston.'},404);
+  if(target.is_admin||uid===u.id)return out({error:'Llogaritë administratore janë të mbrojtura.'},403);
+  if(b.suspended){await env.DB.batch([env.DB.prepare('INSERT OR IGNORE INTO as_admin_suspensions(user_id) VALUES (?)').bind(uid),env.DB.prepare('DELETE FROM as_sessions WHERE user_id=?').bind(uid)]);}else await env.DB.prepare('DELETE FROM as_admin_suspensions WHERE user_id=?').bind(uid).run();
+  await env.DB.prepare('INSERT INTO as_admin_audit(actor_id,action,target_type,target_id,details) VALUES (?,?,?,?,?)').bind(u.id,b.suspended?'user_suspend':'user_restore','user',uid,'').run();return out({ok:true});
+ }
  const carMatch=p.match(/^\/api\/admin\/cars\/([0-9a-f-]{36})\/status$/);
  if(carMatch&&method==='POST'){
   const b=await body(req);if(!['active','deleted'].includes(b?.status))return out({error:'Status i pavlefshëm.'},400);
-  const r=await env.DB.prepare('UPDATE as_cars SET status=? WHERE id=?').bind(b.status,carMatch[1]).run();return out({ok:true,changed:r.meta.changes});
+  const r=await env.DB.prepare('UPDATE as_cars SET status=? WHERE id=?').bind(b.status,carMatch[1]).run();await env.DB.prepare('INSERT INTO as_admin_audit(actor_id,action,target_type,target_id,details) VALUES (?,?,?,?,?)').bind(u.id,'car_status','car',carMatch[1],b.status).run();return out({ok:true,changed:r.meta.changes});
  }
 if(p==='/api/admin/dealers/order'&&method==='POST'){
  const b=await body(req);const ids=b?.ids;
  if(!Array.isArray(ids)||ids.length>200||new Set(ids).size!==ids.length||ids.some(x=>typeof x!=='string'||!/^[0-9a-f-]{36}$/.test(x)))return out({error:'Renditje e pavlefshme.'},400);
  const known=await env.DB.prepare("SELECT id FROM as_users WHERE role='autosallon'").all();const valid=new Set((known.results||[]).map(x=>x.id));if(ids.some(x=>!valid.has(x)))return out({error:'Autosallon i panjohur.'},400);
  await env.DB.batch(ids.map((id,i)=>env.DB.prepare('INSERT INTO as_dealer_order (user_id,position) VALUES (?,?) ON CONFLICT(user_id) DO UPDATE SET position=excluded.position').bind(id,i+1)));
- return out({ok:true});
+ await env.DB.prepare('INSERT INTO as_admin_audit(actor_id,action,target_type,target_id,details) VALUES (?,?,?,?,?)').bind(u.id,'dealer_order','dealers','all',JSON.stringify(ids)).run();return out({ok:true});
 }
 if(p==='/api/admin/dealers'&&method==='GET'){
  const u=await user(req,env.DB);if(!u||u.is_admin!==1)return out({error:'Vetëm administratori.'},403);
@@ -116,7 +127,7 @@ if(p==='/api/admin/dealers'&&method==='GET'){
 if(p==='/api/admin/dealers/featured'&&method==='POST'){
  const u=await user(req,env.DB);if(!u||u.is_admin!==1)return out({error:'Vetëm administratori.'},403);const b=await body(req);
  if(!/^[0-9a-f-]{36}$/.test(String(b?.id||'')))return out({error:'ID i pavlefshëm'},400);
- await env.DB.prepare("INSERT INTO as_dealer_profiles (user_id,slug,featured) SELECT id,lower(replace(name,' ','-'))||'-'||substr(id,1,6),? FROM as_users WHERE id=? AND role='autosallon' ON CONFLICT(user_id) DO UPDATE SET featured=excluded.featured").bind(b.featured?1:0,b.id).run();return out({ok:true});
+ await env.DB.prepare("INSERT INTO as_dealer_profiles (user_id,slug,featured) SELECT id,lower(replace(name,' ','-'))||'-'||substr(id,1,6),? FROM as_users WHERE id=? AND role='autosallon' ON CONFLICT(user_id) DO UPDATE SET featured=excluded.featured").bind(b.featured?1:0,b.id).run();await env.DB.prepare('INSERT INTO as_admin_audit(actor_id,action,target_type,target_id,details) VALUES (?,?,?,?,?)').bind(u.id,'dealer_featured','dealer',b.id,String(!!b.featured)).run();return out({ok:true});
 }
 if(p==='/api/admin/delete-requests'&&method==='GET'){
  const u=await user(req,env.DB);if(!u||u.is_admin!==1)return out({error:'Vetëm administratori.'},403);
