@@ -1,0 +1,8 @@
+AutoShitje Super Admin Faza 2 — KANDIDAT TESTIMI, jo prodhim i verifikuar.
+1) Ruaj backup të D1 dhe GitHub branch aktual.
+2) Ekzekuto schema-superadmin-phase2.sql në D1 autoshitje-db.
+3) Testo në preview/staging para domain-it kryesor.
+4) Funksione: fshirje llogarie me FSHI (fotografitë R2 nuk fshihen), pezullim, VIP me afat, bannerë HTTPS, renditje ekzistuese e autosalloneve, statistika, audit.
+5) Homepage: seksion i ri sponsorizimesh vetëm kur ekzistojnë promovime aktive; nuk preket routing.
+6) Kufizime: nuk ka pagesa, ngarkim direkt të imazheve të bannerëve, analitikë klikimesh/vizitash ose verifikim autosalloni. Fshirja e llogarisë nuk pastron R2.
+7) Verifiko FK constraints të databazës reale para fshirjes së llogarive.

@@ -1,0 +1,1 @@
+PAKETE PROGRESI — JO FINALE. Shtuar: hyrja e bllokuar per te pezulluarit, statistika 30 ditore, parapamje API para fshirjes. Nuk ka SQL te ri. Mbeten: fshirja e plote, banneret, promovimet me skadim, renditja e veturave. Mos publiko pa testim.
