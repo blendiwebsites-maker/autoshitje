@@ -33,7 +33,7 @@ const brandSlug=p.match(/^\/vetura\/marka\/([a-z0-9-]+)$/);
 if(brandSlug){
  const brand=brandPages[brandSlug[1]];
  if(!brand)return new Response('Not found',{status:404});
- const page=await env.ASSETS.fetch(new Request(new URL('/index.html',url),req));
+ const page=await env.ASSETS.fetch(new Request(new URL('/',url),req));
  if(!page.ok)return page;
  // Empty brand pages must not be indexed.
  let count=0;
@@ -51,13 +51,13 @@ if(p==='/sitemap.xml'){
  return new Response(xml,{headers:{'content-type':'application/xml; charset=utf-8','cache-control':'public, max-age=900'}});
 }
 if(/^\/(vetura|autosallon)\/[a-z0-9-]+$/.test(p)){
- const res=await env.ASSETS.fetch(new Request(new URL('/index.html',url),req));if(!env.DB||!res.ok)return res;
+ const res=await env.ASSETS.fetch(new Request(new URL('/',url),req));if(!env.DB||!res.ok)return res;
  let title='AutoShitje — Platforma e veturave',description='Shiko shpallje veturash dhe autosallone në Kosovë.';
  try{if(p.startsWith('/vetura/')){const c=await env.DB.prepare("SELECT brand,model,year,price,city FROM as_cars WHERE id=? AND status='active'").bind(p.split('/')[2]).first();if(c){title=`${c.brand} ${c.model} ${c.year} — AutoShitje`;description=`${c.brand} ${c.model}, viti ${c.year}, ${c.price} €, ${c.city}. Shiko shpalljen në AutoShitje.`}}else{const d=await env.DB.prepare('SELECT u.name,p.city FROM as_dealer_profiles p JOIN as_users u ON u.id=p.user_id WHERE p.slug=?').bind(p.split('/')[2]).first();if(d){title=`${d.name} — AutoShitje`;description=`Shiko veturat e autosallonit ${d.name}, ${d.city||'Kosovë'}, në AutoShitje.`}}}catch(e){console.error('metadata',e)}
  const html=(await res.text()).replace(/<title>[^<]*<\/title>/,`<title>${title.replace(/[&<>"']/g,'')}</title>`).replace(/<meta name="description" content="[^"]*">/,`<meta name="description" content="${description.replace(/[&<>"']/g,'')}">`);
  return new Response(html,{status:res.status,headers:{'content-type':'text/html; charset=utf-8','cache-control':'public, max-age=60'}});
 }
-if(!p.startsWith('/api/')){if(method==='GET'&&/^\/(?:veturat|autosallonet|llogaria|paneli|shpall|favoritet)\/?$/.test(p)){return env.ASSETS.fetch(new Request(new URL('/index.html',url),req));}return env.ASSETS.fetch(req);}
+if(!p.startsWith('/api/')){if(req.method==='GET'&&/^\/(?:veturat|autosallonet|llogaria|paneli|shpall|favoritet)\/?$/.test(p)){return env.ASSETS.fetch(new Request(new URL('/',url),req));}return env.ASSETS.fetch(req);}
 if(!env.DB)return out({error:'D1 binding DB missing'},503);
 try{
 if(method==='POST'&&!sameOrigin(req))return out({error:'Origin not allowed'},403);
@@ -213,10 +213,10 @@ if(p==='/api/admin/delete-requests'&&method==='GET'){
  const u=await user(req,env.DB);if(!u||u.is_admin!==1)return out({error:'Vetëm administratori.'},403);
  const r=await env.DB.prepare('SELECT r.user_id,r.created_at,u.name,u.email FROM as_deletion_requests r JOIN as_users u ON u.id=r.user_id ORDER BY r.created_at DESC').all();return out({requests:r.results||[]});
 }
-// Resolve public showroom links by slug or dealer ID, independent of the directory page.
+// Public showroom lookup for shared links.
 const dealerSlugMatch=p.match(/^\/api\/dealers\/slug\/([a-z0-9-]+)\/?$/i);
 if(dealerSlugMatch&&method==='GET'){
- const key=decodeURIComponent(dealerSlugMatch[1]);
+ const key=dealerSlugMatch[1];
  const r=await env.DB.prepare("SELECT u.id,u.name,COUNT(c.id) AS car_count,p.slug,p.address,p.city,p.phone,p.whatsapp,p.hours,p.instagram,p.facebook,p.logo_url,p.cover_url,COALESCE(p.featured,0) featured FROM as_users u LEFT JOIN as_dealer_profiles p ON p.user_id=u.id LEFT JOIN as_cars c ON c.user_id=u.id AND c.status='active' WHERE u.role='autosallon' AND (lower(p.slug)=lower(?) OR u.id=?) GROUP BY u.id,u.name LIMIT 1").bind(key,key).first();
  if(!r)return out({error:'Autosalloni nuk u gjet.'},404);
  return out({dealer:r});
