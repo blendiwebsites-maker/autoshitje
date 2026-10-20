@@ -208,6 +208,13 @@ if(p==='/api/admin/delete-requests'&&method==='GET'){
  const u=await user(req,env.DB);if(!u||u.is_admin!==1)return out({error:'Vetëm administratori.'},403);
  const r=await env.DB.prepare('SELECT r.user_id,r.created_at,u.name,u.email FROM as_deletion_requests r JOIN as_users u ON u.id=r.user_id ORDER BY r.created_at DESC').all();return out({requests:r.results||[]});
 }
+// Resolve a public showroom directly by its permanent slug, independent of directory pagination.
+if(p.startsWith('/api/dealers/slug/')&&method==='GET'){
+ const slug=decodeURIComponent(p.slice('/api/dealers/slug/'.length)).trim().toLowerCase();
+ if(!/^[a-z0-9-]{1,80}$/.test(slug))return out({error:'Link i pavlefshëm'},400);
+ const d=await env.DB.prepare("SELECT u.id,u.name,p.slug,p.address,p.city,p.phone,p.whatsapp,p.hours,p.instagram,p.facebook,p.logo_url,p.cover_url,COALESCE(p.featured,0) featured,(SELECT COUNT(*) FROM as_cars c WHERE c.user_id=u.id AND c.status='active') car_count FROM as_dealer_profiles p JOIN as_users u ON u.id=p.user_id WHERE u.role='autosallon' AND lower(p.slug)=? LIMIT 1").bind(slug).first();
+ return d?out({dealer:d}):out({error:'Autosalloni nuk u gjet'},404);
+}
 if(p==='/api/dealers'&&method==='GET'){
  // Parameterized search: matches partial names and cities, including mixed case.
  const q=str(url.searchParams.get('q'),80).trim();
