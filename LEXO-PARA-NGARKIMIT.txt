@@ -1,0 +1,5 @@
+AutoShitje — 8 përmirësime, paketë testuese.
+Ndryshimet: public/index.html (pamja, filtrat, llogaria, showroom, editimi); src/index.js (VETËM zgjerimi i /api/cars/:id/edit për fushat ekzistuese).
+Routing, D1, R2, wrangler.toml dhe rrugët e linkeve nuk janë ndryshuar.
+Mos ngarko pa ruajtur kopjen aktuale. Testo në Preview para Production.
+KUFIZIM: Editimi i fotografive mbështet shtimin dhe ndryshimin e fotos kryesore, por JO fshirjen e një fotografie të veçantë.
