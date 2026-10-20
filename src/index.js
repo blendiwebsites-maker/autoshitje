@@ -33,7 +33,7 @@ const brandSlug=p.match(/^\/vetura\/marka\/([a-z0-9-]+)$/);
 if(brandSlug){
  const brand=brandPages[brandSlug[1]];
  if(!brand)return new Response('Not found',{status:404});
- const page=await env.ASSETS.fetch(new Request(new URL('/',url),req));
+ const page=await env.ASSETS.fetch(new Request(new URL('/index.html',url),req));
  if(!page.ok)return page;
  // Empty brand pages must not be indexed.
  let count=0;
@@ -51,7 +51,7 @@ if(p==='/sitemap.xml'){
  return new Response(xml,{headers:{'content-type':'application/xml; charset=utf-8','cache-control':'public, max-age=900'}});
 }
 if(/^\/(vetura|autosallon)\/[a-z0-9-]+$/.test(p)){
- const res=await env.ASSETS.fetch(new Request(new URL('/',url),req));if(!env.DB||!res.ok)return res;
+ const res=await env.ASSETS.fetch(new Request(new URL('/index.html',url),req));if(!env.DB||!res.ok)return res;
  let title='AutoShitje — Platforma e veturave',description='Shiko shpallje veturash dhe autosallone në Kosovë.';
  try{if(p.startsWith('/vetura/')){const c=await env.DB.prepare("SELECT brand,model,year,price,city FROM as_cars WHERE id=? AND status='active'").bind(p.split('/')[2]).first();if(c){title=`${c.brand} ${c.model} ${c.year} — AutoShitje`;description=`${c.brand} ${c.model}, viti ${c.year}, ${c.price} €, ${c.city}. Shiko shpalljen në AutoShitje.`}}else{const d=await env.DB.prepare('SELECT u.name,p.city FROM as_dealer_profiles p JOIN as_users u ON u.id=p.user_id WHERE p.slug=?').bind(p.split('/')[2]).first();if(d){title=`${d.name} — AutoShitje`;description=`Shiko veturat e autosallonit ${d.name}, ${d.city||'Kosovë'}, në AutoShitje.`}}}catch(e){console.error('metadata',e)}
  const html=(await res.text()).replace(/<title>[^<]*<\/title>/,`<title>${title.replace(/[&<>"']/g,'')}</title>`).replace(/<meta name="description" content="[^"]*">/,`<meta name="description" content="${description.replace(/[&<>"']/g,'')}">`);
@@ -120,6 +120,11 @@ if(p==='/api/favorites'&&method==='POST'){
  else await env.DB.prepare('DELETE FROM as_favorites WHERE user_id=? AND car_id=?').bind(u.id,b.carId).run();return out({ok:true});
 }
 // Buyer follows: stored per account; no private buyer information exposed to dealers.
+if(p==='/api/dealer/followers'&&method==='GET'){
+ const u=await user(req,env.DB);if(!u||u.role!=='autosallon')return out({error:'Vetëm autosallonet.'},403);
+ const result=await env.DB.prepare('SELECT COUNT(*) AS count FROM as_dealer_follows WHERE dealer_id=?').bind(u.id).first();
+ return out({count:Number(result?.count||0)});
+}
 if(p==='/api/follows'&&method==='GET'){
  const u=await user(req,env.DB);if(!u)return out({dealerIds:[],cars:[]});
  const r=await env.DB.prepare('SELECT dealer_id FROM as_dealer_follows WHERE user_id=? ORDER BY created_at DESC').bind(u.id).all();
@@ -207,13 +212,6 @@ if(p==='/api/admin/dealers/featured'&&method==='POST'){
 if(p==='/api/admin/delete-requests'&&method==='GET'){
  const u=await user(req,env.DB);if(!u||u.is_admin!==1)return out({error:'Vetëm administratori.'},403);
  const r=await env.DB.prepare('SELECT r.user_id,r.created_at,u.name,u.email FROM as_deletion_requests r JOIN as_users u ON u.id=r.user_id ORDER BY r.created_at DESC').all();return out({requests:r.results||[]});
-}
-// Resolve a public showroom directly by its permanent slug, independent of directory pagination.
-if(p.startsWith('/api/dealers/slug/')&&method==='GET'){
- const slug=decodeURIComponent(p.slice('/api/dealers/slug/'.length)).trim().toLowerCase();
- if(!/^[a-z0-9-]{1,80}$/.test(slug))return out({error:'Link i pavlefshëm'},400);
- const d=await env.DB.prepare("SELECT u.id,u.name,p.slug,p.address,p.city,p.phone,p.whatsapp,p.hours,p.instagram,p.facebook,p.logo_url,p.cover_url,COALESCE(p.featured,0) featured,(SELECT COUNT(*) FROM as_cars c WHERE c.user_id=u.id AND c.status='active') car_count FROM as_dealer_profiles p JOIN as_users u ON u.id=p.user_id WHERE u.role='autosallon' AND lower(p.slug)=? LIMIT 1").bind(slug).first();
- return d?out({dealer:d}):out({error:'Autosalloni nuk u gjet'},404);
 }
 if(p==='/api/dealers'&&method==='GET'){
  // Parameterized search: matches partial names and cities, including mixed case.
