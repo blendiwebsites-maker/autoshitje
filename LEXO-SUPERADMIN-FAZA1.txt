@@ -1,0 +1,7 @@
+AutoShitje Super Admin - PAKETE E PJESSHME PER TESTIM (jo 8 funksionet finale)
+1. Ruaj backup te versionit qe punon.
+2. Ekzekuto schema-superadmin-phase1.sql ne D1 para deploy (eshte e detyrueshme).
+3. Deploy vetem ne degen autoshitje-origjinal-sakte.
+SHTUAR: pezullim/riaktivizim perdoruesish (me bllokim sesioni), histori veprimesh admin, menu mobile 2 kolona, sfond i njejte.
+RUHEN: menaxhimi ekzistues i shpalljeve dhe renditja/VIP e autosalloneve.
+NUK JANE IMPLEMENTUAR ENDE: fshirja perfundimtare e userave, renditja e veturave ne balline, bannerat, statistikat e vizitave, VIP me afat, editimi i plote nga admin. Mos e konsidero versionin final.
