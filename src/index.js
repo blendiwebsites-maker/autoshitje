@@ -57,7 +57,7 @@ if(/^\/(vetura|autosallon)\/[a-z0-9-]+$/.test(p)){
  const html=(await res.text()).replace(/<title>[^<]*<\/title>/,`<title>${title.replace(/[&<>"']/g,'')}</title>`).replace(/<meta name="description" content="[^"]*">/,`<meta name="description" content="${description.replace(/[&<>"']/g,'')}">`);
  return new Response(html,{status:res.status,headers:{'content-type':'text/html; charset=utf-8','cache-control':'public, max-age=60'}});
 }
-if(!p.startsWith('/api/'))return env.ASSETS.fetch(req);
+if(!p.startsWith('/api/')){if(req.method==='GET'&&/^\/(?:veturat|autosallonet|llogaria|paneli|shpall|favoritet)\/?$/.test(p)){return env.ASSETS.fetch(new Request(new URL('/',url),req));}return env.ASSETS.fetch(req);}
 if(!env.DB)return out({error:'D1 binding DB missing'},503);
 try{
 if(method==='POST'&&!sameOrigin(req))return out({error:'Origin not allowed'},403);
