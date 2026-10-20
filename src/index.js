@@ -70,6 +70,7 @@ if(p==='/api/auth/register'&&method==='POST'){
 }
 if(p==='/api/auth/login'&&method==='POST'){
  const b=await body(req);if(!b)return out({error:'Invalid request'},400);const email=str(b.email,254).toLowerCase();const r=await env.DB.prepare('SELECT * FROM as_users WHERE email=?').bind(email).first();if(!r||await hash(String(b.password||''),r.salt)!==r.password_hash)return out({error:'Email ose fjalëkalim i gabuar.'},401);
+ const blocked=await env.DB.prepare('SELECT user_id FROM as_admin_suspensions WHERE user_id=?').bind(r.id).first();if(blocked)return out({error:'Kjo llogari është pezulluar. Kontakto administratorin.'},403);
  const token=id()+id();await env.DB.prepare('INSERT INTO as_sessions (token_hash,user_id,expires_at) VALUES (?,?,?)').bind(await sha(token),r.id,Date.now()+604800000).run();return out({ok:true,user:{id:r.id,name:r.name,email:r.email,role:r.role}},200,{'set-cookie':sessionCookie(token)});
 }
 if(p==='/api/auth/me'&&method==='GET')return out({user:await user(req,env.DB)});
@@ -91,8 +92,72 @@ if(p.startsWith('/api/admin/')){
  if(p==='/api/admin/summary'&&method==='GET'){
   const [users,cars,dealers,active,sold]=await Promise.all([env.DB.prepare('SELECT COUNT(*) AS n FROM as_users').first(),env.DB.prepare('SELECT COUNT(*) AS n FROM as_cars').first(),env.DB.prepare("SELECT COUNT(*) AS n FROM as_users WHERE role='autosallon'").first(),env.DB.prepare("SELECT COUNT(*) AS n FROM as_cars WHERE status='active'").first(),env.DB.prepare("SELECT COUNT(*) AS n FROM as_cars WHERE status='sold'").first()]);return out({users:users.n,cars:cars.n,dealers:dealers.n,active:active.n,sold:sold.n});
  }
+ if(p==='/api/admin/growth'&&method==='GET'){
+  const [registrations,listings,roles,suspended]=await Promise.all([
+   env.DB.prepare("SELECT substr(created_at,1,10) AS day,COUNT(*) AS n FROM as_users WHERE created_at >= datetime('now','-30 days') GROUP BY substr(created_at,1,10) ORDER BY day").all(),
+   env.DB.prepare("SELECT substr(created_at,1,10) AS day,COUNT(*) AS n FROM as_cars WHERE created_at >= datetime('now','-30 days') GROUP BY substr(created_at,1,10) ORDER BY day").all(),
+   env.DB.prepare('SELECT role,COUNT(*) AS n FROM as_users GROUP BY role').all(),
+   env.DB.prepare('SELECT COUNT(*) AS n FROM as_admin_suspensions').first()
+  ]);
+  return out({registrations:registrations.results||[],listings:listings.results||[],roles:roles.results||[],suspended:Number(suspended?.n||0),period:'30 ditët e fundit'});
+ }
+ if(p==='/api/admin/users/preview'&&method==='GET'){
+  const uid=url.searchParams.get('id');if(!/^[0-9a-f-]{36}$/.test(uid||''))return out({error:'ID e pavlefshme.'},400);
+  const target=await env.DB.prepare('SELECT id,name,email,is_admin FROM as_users WHERE id=?').bind(uid).first();if(!target)return out({error:'Përdoruesi nuk ekziston.'},404);
+  const c=await env.DB.prepare('SELECT COUNT(*) AS n FROM as_cars WHERE user_id=?').bind(uid).first();
+  const photos=await env.DB.prepare('SELECT COUNT(*) AS n FROM as_car_photos p JOIN as_cars c ON c.id=p.car_id WHERE c.user_id=?').bind(uid).first();
+  return out({user:{id:target.id,name:target.name,email:target.email,protected:!!target.is_admin||target.id===u.id},cars:Number(c?.n||0),photos:Number(photos?.n||0),note:'Vetëm parapamje. Asgjë nuk fshihet.'});
+ }
  if(p==='/api/admin/audit'&&method==='GET'){
   const r=await env.DB.prepare('SELECT action,target_type,target_id,details,created_at FROM as_admin_audit ORDER BY id DESC LIMIT 100').all();return out({events:r.results||[]});
+ }
+ if(p==='/api/admin/users/delete'&&method==='POST'){
+  const b=await body(req),id=String(b?.id||'');if(!/^[0-9a-f-]{36}$/.test(id)||b?.confirmation!=='FSHI')return out({error:'Shkruaj FSHI për konfirmim.'},400);
+  const target=await env.DB.prepare('SELECT id,is_admin,email FROM as_users WHERE id=?').bind(id).first();if(!target)return out({error:'Përdoruesi nuk u gjet.'},404);
+  if(target.is_admin||target.id===u.id)return out({error:'Administratori nuk mund të fshihet.'},403);
+  const cars=await env.DB.prepare('SELECT id FROM as_cars WHERE user_id=?').bind(id).all();
+  const carIds=(cars.results||[]).map(x=>x.id);
+  const operations=[];
+  for(const carId of carIds){operations.push(env.DB.prepare('DELETE FROM as_car_photos WHERE car_id=?').bind(carId));operations.push(env.DB.prepare('DELETE FROM as_favorites WHERE car_id=?').bind(carId));}
+  operations.push(env.DB.prepare('DELETE FROM as_favorites WHERE user_id=?').bind(id));
+  operations.push(env.DB.prepare('DELETE FROM as_sessions WHERE user_id=?').bind(id));
+  operations.push(env.DB.prepare('DELETE FROM as_deletion_requests WHERE user_id=?').bind(id));
+  operations.push(env.DB.prepare('DELETE FROM as_admin_suspensions WHERE user_id=?').bind(id));
+  operations.push(env.DB.prepare('DELETE FROM as_dealer_order WHERE user_id=?').bind(id));
+  operations.push(env.DB.prepare('DELETE FROM as_dealer_profiles WHERE user_id=?').bind(id));
+  operations.push(env.DB.prepare('DELETE FROM as_cars WHERE user_id=?').bind(id));
+  operations.push(env.DB.prepare('DELETE FROM as_users WHERE id=? AND is_admin=0').bind(id));
+  operations.push(env.DB.prepare('INSERT INTO as_admin_audit(actor_id,action,target_type,target_id,details) VALUES (?,?,?,?,?)').bind(u.id,'user_delete','user',id,JSON.stringify({email:target.email,cars:carIds.length,photos:'R2 files preserved for safety'})));
+  await env.DB.batch(operations);return out({ok:true,cars:carIds.length,note:'Fotografitë në R2 ruhen për siguri; pastrimi i tyre bëhet veçmas.'});
+ }
+ if(p==='/api/admin/promotions'&&method==='GET'){
+  const r=await env.DB.prepare('SELECT * FROM as_admin_promotions ORDER BY position ASC,created_at DESC').all();return out({promotions:r.results||[]});
+ }
+ if(p==='/api/admin/promotions'&&method==='POST'){
+  const b=await body(req),type=String(b?.type||''),id=String(b?.target_id||'');
+  if(!['car','dealer'].includes(type)||!/^[0-9a-f-]{36}$/.test(id))return out({error:'Objektivi nuk është valid.'},400);
+  const days=Number(b?.days),position=Number(b?.position);if(!Number.isInteger(days)||days<1||days>365||!Number.isInteger(position)||position<1||position>100)return out({error:'Afati ose pozicioni i pavlefshëm.'},400);
+  const exists=type==='car'?await env.DB.prepare("SELECT id FROM as_cars WHERE id=? AND status='active'").bind(id).first():await env.DB.prepare("SELECT id FROM as_users WHERE id=? AND role='autosallon'").bind(id).first();if(!exists)return out({error:'Objektivi nuk ekziston ose nuk është aktiv.'},404);
+  await env.DB.prepare("INSERT INTO as_admin_promotions(type,target_id,position,starts_at,ends_at,enabled) VALUES (?,?,?,datetime('now'),datetime('now',? || ' days'),1) ON CONFLICT(type,target_id) DO UPDATE SET position=excluded.position,starts_at=excluded.starts_at,ends_at=excluded.ends_at,enabled=1").bind(type,id,position,'+'+days).run();
+  await env.DB.prepare('INSERT INTO as_admin_audit(actor_id,action,target_type,target_id,details) VALUES (?,?,?,?,?)').bind(u.id,'promotion_set',type,id,JSON.stringify({days,position})).run();return out({ok:true});
+ }
+ if(p==='/api/admin/promotions/remove'&&method==='POST'){
+  const b=await body(req);if(!['car','dealer'].includes(b?.type)||!/^[0-9a-f-]{36}$/.test(String(b?.target_id||'')))return out({error:'Të dhëna të pavlefshme.'},400);
+  await env.DB.prepare('DELETE FROM as_admin_promotions WHERE type=? AND target_id=?').bind(b.type,b.target_id).run();
+  await env.DB.prepare('INSERT INTO as_admin_audit(actor_id,action,target_type,target_id,details) VALUES (?,?,?,?,?)').bind(u.id,'promotion_remove',b.type,b.target_id,'').run();return out({ok:true});
+ }
+ if(p==='/api/admin/banners'&&method==='GET'){
+  const r=await env.DB.prepare('SELECT * FROM as_admin_banners ORDER BY position,created_at DESC').all();return out({banners:r.results||[]});
+ }
+ if(p==='/api/admin/banners'&&method==='POST'){
+  const b=await body(req),title=str(b?.title,100),image=str(b?.image_url,500),link=str(b?.link_url,500),position=Number(b?.position||1);
+  if(!title||!/^https:\/\//.test(image)||!/^https:\/\//.test(link)||!Number.isInteger(position)||position<1||position>20)return out({error:'Titulli, fotografia HTTPS, linku HTTPS dhe pozicioni janë të detyrueshme.'},400);
+  const id=crypto.randomUUID();await env.DB.prepare('INSERT INTO as_admin_banners(id,title,image_url,link_url,position,enabled) VALUES (?,?,?,?,?,1)').bind(id,title,image,link,position).run();
+  await env.DB.prepare('INSERT INTO as_admin_audit(actor_id,action,target_type,target_id,details) VALUES (?,?,?,?,?)').bind(u.id,'banner_create','banner',id,title).run();return out({ok:true,id});
+ }
+ if(p==='/api/admin/banners/remove'&&method==='POST'){
+  const b=await body(req);if(!/^[0-9a-f-]{36}$/.test(String(b?.id||'')))return out({error:'ID e pavlefshme.'},400);
+  await env.DB.prepare('DELETE FROM as_admin_banners WHERE id=?').bind(b.id).run();await env.DB.prepare('INSERT INTO as_admin_audit(actor_id,action,target_type,target_id,details) VALUES (?,?,?,?,?)').bind(u.id,'banner_remove','banner',b.id,'').run();return out({ok:true});
  }
  if(p==='/api/admin/users'&&method==='GET'){
   const r=await env.DB.prepare('SELECT u.id,u.name,u.email,u.role,u.is_admin,u.created_at,CASE WHEN x.user_id IS NULL THEN 0 ELSE 1 END AS suspended FROM as_users u LEFT JOIN as_admin_suspensions x ON x.user_id=u.id ORDER BY u.created_at DESC LIMIT 200').all();return out({users:r.results||[]});
@@ -238,6 +303,12 @@ if(dealerSlugMatch&&method==='GET'){
  const r=await env.DB.prepare("SELECT u.id,u.name,COUNT(c.id) AS car_count,p.slug,p.address,p.city,p.phone,p.whatsapp,p.hours,p.instagram,p.facebook,p.logo_url,p.cover_url,COALESCE(p.featured,0) featured FROM as_users u LEFT JOIN as_dealer_profiles p ON p.user_id=u.id LEFT JOIN as_cars c ON c.user_id=u.id AND c.status='active' WHERE u.role='autosallon' AND (lower(p.slug)=lower(?) OR u.id=?) GROUP BY u.id,u.name LIMIT 1").bind(key,key).first();
  if(!r)return out({error:'Autosalloni nuk u gjet.'},404);
  return out({dealer:r});
+}
+if(p==='/api/home/promotions'&&method==='GET'){
+ const [promotions,banners]=await Promise.all([
+  env.DB.prepare("SELECT p.type,p.target_id,p.position,p.ends_at,CASE WHEN p.type='car' THEN c.brand || ' ' || c.model ELSE u.name END AS title FROM as_admin_promotions p LEFT JOIN as_cars c ON p.type='car' AND c.id=p.target_id AND c.status='active' LEFT JOIN as_users u ON p.type='dealer' AND u.id=p.target_id AND u.role='autosallon' WHERE p.enabled=1 AND p.starts_at<=datetime('now') AND p.ends_at>datetime('now') AND ((p.type='car' AND c.id IS NOT NULL) OR (p.type='dealer' AND u.id IS NOT NULL)) ORDER BY p.position LIMIT 20").all(),
+  env.DB.prepare('SELECT id,title,image_url,link_url,position FROM as_admin_banners WHERE enabled=1 ORDER BY position LIMIT 10').all()
+ ]);return out({promotions:promotions.results||[],banners:banners.results||[]});
 }
 if(p==='/api/dealers'&&method==='GET'){
  // Parameterized search: matches partial names and cities, including mixed case.
