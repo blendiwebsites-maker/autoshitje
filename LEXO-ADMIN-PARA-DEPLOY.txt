@@ -1,0 +1,12 @@
+AutoShitje SUPER ADMIN - version mbi ZIP-in e ngarkuar.
+
+HAPI 1: Cloudflare > D1 > Console: ekzekuto SQL-in e skedarit schema-admin-order.sql.
+HAPI 2: Pastaj ngarko kete projekt/ZIP me menyren e zakonshme te deploy-it.
+HAPI 3: Hape /admin dhe kyçu me email + fjalekalimin ekzistues te administratorit.
+HAPI 4: Te Autosallonet, leviz me shigjeta dhe kliko Ruaj renditjen.
+
+KUJDES: Nese tabela as_deletion_requests mungon ne DB, duhet te jete krijuar sipas udhezimeve te meparshme.
+Nuk ndryshohet asnje fjalekalim ose rol ekzistues.
+Renditja publike ndryshon VETEM ne listen e autosalloneve; asnje route/link nuk ndryshohet.
+Funksionet VIP me pagese, analitika dhe pagesat online NUK jane implementuar ne kete version.
+Ruaj nje kopje te deploy-it aktual para publikimit.
