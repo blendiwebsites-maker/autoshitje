@@ -33,7 +33,7 @@ const brandSlug=p.match(/^\/vetura\/marka\/([a-z0-9-]+)$/);
 if(brandSlug){
  const brand=brandPages[brandSlug[1]];
  if(!brand)return new Response('Not found',{status:404});
- const page=await env.ASSETS.fetch(new Request(new URL('/index.html',url),req));
+ const page=await env.ASSETS.fetch(new Request(new URL('/',url),req));
  if(!page.ok)return page;
  // Empty brand pages must not be indexed.
  let count=0;
@@ -51,18 +51,11 @@ if(p==='/sitemap.xml'){
  return new Response(xml,{headers:{'content-type':'application/xml; charset=utf-8','cache-control':'public, max-age=900'}});
 }
 if(/^\/(vetura|autosallon)\/[a-z0-9-]+$/.test(p)){
- const res=await env.ASSETS.fetch(new Request(new URL('/index.html',url),req));if(!env.DB||!res.ok)return res;
+ const res=await env.ASSETS.fetch(new Request(new URL('/',url),req));if(!env.DB||!res.ok)return res;
  let title='AutoShitje — Platforma e veturave',description='Shiko shpallje veturash dhe autosallone në Kosovë.';
  try{if(p.startsWith('/vetura/')){const c=await env.DB.prepare("SELECT brand,model,year,price,city FROM as_cars WHERE id=? AND status='active'").bind(p.split('/')[2]).first();if(c){title=`${c.brand} ${c.model} ${c.year} — AutoShitje`;description=`${c.brand} ${c.model}, viti ${c.year}, ${c.price} €, ${c.city}. Shiko shpalljen në AutoShitje.`}}else{const d=await env.DB.prepare('SELECT u.name,p.city FROM as_dealer_profiles p JOIN as_users u ON u.id=p.user_id WHERE p.slug=?').bind(p.split('/')[2]).first();if(d){title=`${d.name} — AutoShitje`;description=`Shiko veturat e autosallonit ${d.name}, ${d.city||'Kosovë'}, në AutoShitje.`}}}catch(e){console.error('metadata',e)}
  const html=(await res.text()).replace(/<title>[^<]*<\/title>/,`<title>${title.replace(/[&<>"']/g,'')}</title>`).replace(/<meta name="description" content="[^"]*">/,`<meta name="description" content="${description.replace(/[&<>"']/g,'')}">`);
  return new Response(html,{status:res.status,headers:{'content-type':'text/html; charset=utf-8','cache-control':'public, max-age=60'}});
-}
-// Serve the SPA document on every client-side route, including a hard refresh.
-// Without this, Cloudflare Assets may return a missing route or a downloadable .txt file.
-if(method==='GET' && /^\/(?:veturat|autosallonet|llogaria|paneli|shpall|favoritet|showroom|detajet)\/?$/.test(p)){
- const page=await env.ASSETS.fetch(new Request(new URL('/index.html',url),req));
- if(!page.ok)return page;
- return new Response(page.body,{status:200,headers:{'content-type':'text/html; charset=utf-8','cache-control':'no-cache','x-content-type-options':'nosniff'}});
 }
 if(!p.startsWith('/api/'))return env.ASSETS.fetch(req);
 if(!env.DB)return out({error:'D1 binding DB missing'},503);
@@ -228,6 +221,12 @@ if(p==='/api/dealers'&&method==='GET'){
  const r=await env.DB.prepare(sql).bind(q,q,q,city,city).all();return out({dealers:r.results||[]});
 }
 async function attachPhotos(rows){if(!rows.length)return rows;const ids=rows.map(x=>x.id);const marks=ids.map(()=>'?').join(',');const found=await env.DB.prepare(`SELECT car_id,photo_key FROM as_car_photos WHERE car_id IN (${marks}) ORDER BY position ASC,created_at ASC`).bind(...ids).all();const by=new Map();for(const x of found.results||[]){if(!by.has(x.car_id))by.set(x.car_id,[]);by.get(x.car_id).push(x.photo_key)}return rows.map(r=>({...r,photos:by.get(r.id)|| (r.photo_key?[r.photo_key]:[])}))}
+if(method==='GET'&&/^\/api\/cars\/[0-9a-f-]{36}$/.test(p)){
+ const carId=p.split('/')[3];
+ const r=await env.DB.prepare("SELECT c.*,u.name AS seller FROM as_cars c JOIN as_users u ON u.id=c.user_id WHERE c.id=? AND c.status='active'").bind(carId).first();
+ if(!r)return out({error:'Vetura nuk u gjet.'},404);
+ return out({car:safeCar((await attachPhotos([r]))[0])});
+}
 if(p==='/api/cars'&&method==='GET'){
  const rawLimit=Number(url.searchParams.get('limit'));const rawOffset=Number(url.searchParams.get('offset'));const limit=Number.isFinite(rawLimit)&&rawLimit>0?Math.min(500,Math.max(1,Math.trunc(rawLimit))):48;const offset=Number.isFinite(rawOffset)&&rawOffset>=0?Math.min(100000,Math.trunc(rawOffset)):0;let sql='SELECT c.*,u.name AS seller FROM as_cars c JOIN as_users u ON c.user_id=u.id WHERE c.status=\'active\'';const args=[];
  const dealer=str(url.searchParams.get('dealer'),36);if(dealer&&/^[0-9a-f-]{36}$/.test(dealer)){sql+=' AND c.user_id=?';args.push(dealer)}for(const k of ['brand','model','city','fuel','gear','category','customs']){const v=str(url.searchParams.get(k),70);if(v){sql+=` AND c.${k}=?`;args.push(v)}}for(const [key,op] of [['minPrice','>='],['maxPrice','<='],['minYear','>='],['maxYear','<='],['minKm','>='],['maxKm','<=']]){const val=url.searchParams.get(key);if(val!==null&&val!==''&&Number.isFinite(Number(val))){sql+=' AND c.'+({minPrice:'price',maxPrice:'price',minYear:'year',maxYear:'year',minKm:'km',maxKm:'km'}[key])+op+'?';args.push(Number(val))}}const sortMap={newest:'c.created_at DESC',price_asc:'c.price ASC, c.created_at DESC',price_desc:'c.price DESC, c.created_at DESC',year_desc:'c.year DESC, c.created_at DESC',year_asc:'c.year ASC, c.created_at DESC',km_asc:'c.km ASC, c.created_at DESC',km_desc:'c.km DESC, c.created_at DESC'};const sort=url.searchParams.get('sort')||'newest';sql+=' ORDER BY '+(dealer?'c.pinned DESC, ':'')+(sortMap[sort]||sortMap.newest)+', c.id DESC LIMIT ? OFFSET ?';args.push(limit+1,offset);
