@@ -63,7 +63,7 @@ try{
 if(method==='POST'&&!sameOrigin(req))return out({error:'Origin not allowed'},403);
 if(p==='/api/auth/register'&&method==='POST'){
  const b=await body(req);if(!b)return out({error:'Invalid request'},400);const name=str(b.name,80),email=str(b.email,254).toLowerCase(),pass=String(b.password||''),role=b.role==='autosallon'?'autosallon':'privat';
- if(name.length<2||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||pass.length<12||pass.length>128)return out({error:'Emri, emaili ose fjalëkalimi nuk është valid (minimumi 12 karaktere).'},400);
+ if(name.length<2||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||pass.length<8||pass.length>128)return out({error:'Emri, emaili ose fjalëkalimi nuk është valid (minimumi 8 karaktere).'},400);
  const salt=hex(crypto.getRandomValues(new Uint8Array(16)));const pw=await hash(pass,salt);const uid=id();
  try{await env.DB.prepare('INSERT INTO as_users (id,name,email,password_hash,salt,role) VALUES (?,?,?,?,?,?)').bind(uid,name,email,pw,salt,role).run()}catch(e){console.error('AutoShitje registration insert failed:',e);if(String(e?.message||'').includes('UNIQUE constraint failed: as_users.email'))return out({error:'Ky email është i regjistruar.'},409);throw e}
  const token=id()+id();await env.DB.prepare('INSERT INTO as_sessions (token_hash,user_id,expires_at) VALUES (?,?,?)').bind(await sha(token),uid,Date.now()+604800000).run();return out({ok:true,user:{id:uid,name,email,role}},201,{'set-cookie':sessionCookie(token)});
@@ -78,7 +78,7 @@ if(p==='/api/auth/logout'&&method==='POST'){const t=cookie(req).as_session;if(t)
 if(p==='/api/auth/change-password'&&method==='POST'){
  const u=await user(req,env.DB);if(!u)return out({error:'Kyçu së pari.'},401);
  const b=await body(req);if(!b)return out({error:'Kërkesë e pavlefshme.'},400);
- const next=String(b.newPassword||'');if(next.length<12||next.length>128)return out({error:'Fjalëkalimi i ri duhet të ketë 12–128 karaktere.'},400);
+ const next=String(b.newPassword||'');if(next.length<8||next.length>128)return out({error:'Fjalëkalimi i ri duhet të ketë 8–128 karaktere.'},400);
  const r=await env.DB.prepare('SELECT password_hash,salt FROM as_users WHERE id=?').bind(u.id).first();
  if(!r||await hash(String(b.currentPassword||''),r.salt)!==r.password_hash)return out({error:'Fjalëkalimi aktual është gabim.'},403);
  const salt=hex(crypto.getRandomValues(new Uint8Array(16)));
