@@ -369,4 +369,28 @@ window.addEventListener('load',()=>{const section=byId('paneli');const hero=sect
  window.addEventListener('load',()=>{update();setTimeout(update,1000)});
  const accountStatus=byId('account-status');if(accountStatus)new MutationObserver(update).observe(accountStatus,{childList:true,characterData:true,subtree:true});
 })();
-</script></body></html>
+</script>
+<style id="as-compact-search-20261020">
+#veturat .as-advanced-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:12px 0}
+#veturat .as-advanced-filters .field{min-width:0}
+#veturat .as-advanced-filters .field select{width:100%;min-width:0}
+#veturat .as-advanced-filters .field:nth-child(n+3){display:none}
+#veturat .as-advanced-filters.as-expanded .field:nth-child(n+3){display:block}
+#as-filter-controls{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:12px 0 20px}
+#as-filter-controls button{flex:1;min-width:135px}
+#as-filter-controls .as-filter-toggle{background:#202530;border:1px solid #414858;color:#fff}
+#veturat .toolbar{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+#veturat .toolbar>*{min-width:0;width:100%}
+#veturat .toolbar select,#veturat .toolbar input{min-width:0;width:100%}
+@media(max-width:580px){#veturat .as-advanced-filters{gap:9px}#veturat .as-advanced-filters .field select{padding:12px 8px;font-size:13px}#veturat .toolbar select,#veturat .toolbar input{font-size:13px;padding:12px 8px}}
+</style>
+<script id="as-compact-search-script-20261020">
+(function(){function setup(){const area=document.querySelector('#veturat .as-advanced-filters');if(!area||document.getElementById('as-filter-controls'))return;
+const controls=document.createElement('div');controls.id='as-filter-controls';controls.innerHTML='<button type="button" class="btn as-filter-toggle" id="as-filter-toggle" aria-expanded="false">☷ Filtra të avancuar ▾</button><button type="button" class="btn alt" id="as-filter-reset">Pastro filtrat</button><button type="button" class="btn" id="as-filter-submit">🔎 Shfaq veturat</button>';
+area.after(controls);
+const toggle=controls.querySelector('#as-filter-toggle');toggle.addEventListener('click',()=>{const open=area.classList.toggle('as-expanded');toggle.setAttribute('aria-expanded',String(open));toggle.textContent=open?'☷ Mbyll filtrat ▴':'☷ Filtra të avancuar ▾'});
+controls.querySelector('#as-filter-submit').addEventListener('click',()=>{if(typeof window.renderCars==='function')window.renderCars();document.querySelector('#all-cars')?.scrollIntoView({behavior:'smooth',block:'start'})});
+controls.querySelector('#as-filter-reset').addEventListener('click',()=>{const root=document.getElementById('veturat');root?.querySelectorAll('input,select').forEach(el=>{if(el.id==='as-sort')return;el.value='';el.dispatchEvent(new Event('change',{bubbles:true}))});if(typeof window.renderCars==='function')window.renderCars()});
+}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(setup,0));else setTimeout(setup,0)})();
+</script>
+</body></html>
