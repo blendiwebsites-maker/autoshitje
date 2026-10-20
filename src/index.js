@@ -24,7 +24,7 @@ async function user(req,db){const token=cookie(req).as_session;if(!token)return 
 const sessionCookie=(token,max=604800)=>`as_session=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${max}`;
 async function body(req){if(Number(req.headers.get('content-length')||0)>150000)return null;try{return await req.json()}catch{return null}}
 function sameOrigin(req){try{return new URL(req.headers.get('origin')).origin===new URL(req.url).origin}catch{return false}}
-const safeCar=r=>({id:r.id,brand:r.brand,model:r.model,year:r.year,km:r.km,price:r.price,city:r.city,fuel:r.fuel,gear:r.gear,description:r.description,phone:r.phone,photo_key:r.photo_key,photos:r.photos||[],created_at:r.created_at,seller:r.seller,seller_id:r.user_id,category:r.category||"",customs:r.customs||"",status:r.status||"active"});
+const safeCar=r=>({id:r.id,brand:r.brand,model:r.model,year:r.year,km:r.km,price:r.price,city:r.city,fuel:r.fuel,gear:r.gear,description:r.description,phone:r.phone,photo_key:r.photo_key,photos:r.photos||[],created_at:r.created_at,seller:r.seller,seller_id:r.user_id,category:r.category||"",customs:r.customs||"",status:r.status||"active",pinned:Number(r.pinned||0)===1});
 export default {async fetch(req,env){const url=new URL(req.url),p=url.pathname,method=req.method;
 if(p==='/api/health')return out({ok:true,project:'AutoShitje',database:!!env.DB,mode:'accounts-and-listings',photos:!!env.PHOTOS,build:'pbkdf2-worker-fix'});
 // Public SEO brand landing pages; only a curated, finite list is indexable.
