@@ -1,0 +1,10 @@
+AutoShitje — 6 korrigjime të reja mbi ZIP-in e 8 përmirësimeve.
+1. Numri i shpalljeve: paneli merr të dhënat nga /api/cars/mine, shfaq — kur dështon ngarkimi.
+2. Butoni Dil pranë Llogaria ime, vetëm kur je kyçur.
+3. Ndryshimi i fjalëkalimit me konfirmim dhe minimum 8 karaktere; regjistrimi po ashtu minimum 8. Login pranon edhe fjalëkalimet e vjetra.
+4. Seksioni i cilësimeve ka buton Mbyll dhe mbetet i mbyllur në fillim.
+5. Orari ka zgjedhje të shpejta dhe fushë për orar të personalizuar; rrjetet sociale pranojnë username dhe ruajnë URL-në e plotë.
+6. Opsionet e llogarisë fshihen nga pamja kur nuk je kyçur; profili i autosallonit vetëm për autosallon.
+
+KUJDES: Ndryshimet janë kontrolluar për sintaksë, por NUK janë testuar me Cloudflare/D1 real. Provo në Preview dhe ruaj versionin e vjetër para Production.
+Konfigurimi wrangler.toml nuk ndryshon. Nuk janë ndryshuar rregullat e rutimit apo linkeve në src/index.js.
