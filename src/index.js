@@ -57,6 +57,13 @@ if(/^\/(vetura|autosallon)\/[a-z0-9-]+$/.test(p)){
  const html=(await res.text()).replace(/<title>[^<]*<\/title>/,`<title>${title.replace(/[&<>"']/g,'')}</title>`).replace(/<meta name="description" content="[^"]*">/,`<meta name="description" content="${description.replace(/[&<>"']/g,'')}">`);
  return new Response(html,{status:res.status,headers:{'content-type':'text/html; charset=utf-8','cache-control':'public, max-age=60'}});
 }
+// Serve the SPA document on every client-side route, including a hard refresh.
+// Without this, Cloudflare Assets may return a missing route or a downloadable .txt file.
+if(method==='GET' && /^\/(?:veturat|autosallonet|llogaria|paneli|shpall|favoritet|showroom|detajet)\/?$/.test(p)){
+ const page=await env.ASSETS.fetch(new Request(new URL('/index.html',url),req));
+ if(!page.ok)return page;
+ return new Response(page.body,{status:200,headers:{'content-type':'text/html; charset=utf-8','cache-control':'no-cache','x-content-type-options':'nosniff'}});
+}
 if(!p.startsWith('/api/'))return env.ASSETS.fetch(req);
 if(!env.DB)return out({error:'D1 binding DB missing'},503);
 try{
