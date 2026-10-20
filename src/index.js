@@ -102,9 +102,16 @@ if(p.startsWith('/api/admin/')){
   const b=await body(req);if(!['active','deleted'].includes(b?.status))return out({error:'Status i pavlefshëm.'},400);
   const r=await env.DB.prepare('UPDATE as_cars SET status=? WHERE id=?').bind(b.status,carMatch[1]).run();return out({ok:true,changed:r.meta.changes});
  }
+if(p==='/api/admin/dealers/order'&&method==='POST'){
+ const b=await body(req);const ids=b?.ids;
+ if(!Array.isArray(ids)||ids.length>200||new Set(ids).size!==ids.length||ids.some(x=>typeof x!=='string'||!/^[0-9a-f-]{36}$/.test(x)))return out({error:'Renditje e pavlefshme.'},400);
+ const known=await env.DB.prepare("SELECT id FROM as_users WHERE role='autosallon'").all();const valid=new Set((known.results||[]).map(x=>x.id));if(ids.some(x=>!valid.has(x)))return out({error:'Autosallon i panjohur.'},400);
+ await env.DB.batch(ids.map((id,i)=>env.DB.prepare('INSERT INTO as_dealer_order (user_id,position) VALUES (?,?) ON CONFLICT(user_id) DO UPDATE SET position=excluded.position').bind(id,i+1)));
+ return out({ok:true});
+}
 if(p==='/api/admin/dealers'&&method==='GET'){
  const u=await user(req,env.DB);if(!u||u.is_admin!==1)return out({error:'Vetëm administratori.'},403);
- const r=await env.DB.prepare("SELECT u.id,u.name,COALESCE(p.featured,0) featured FROM as_users u LEFT JOIN as_dealer_profiles p ON p.user_id=u.id WHERE u.role='autosallon' ORDER BY u.name").all();return out({dealers:r.results||[]});
+ const r=await env.DB.prepare("SELECT u.id,u.name,COALESCE(p.featured,0) featured,ord.position FROM as_users u LEFT JOIN as_dealer_profiles p ON p.user_id=u.id LEFT JOIN as_dealer_order ord ON ord.user_id=u.id WHERE u.role='autosallon' ORDER BY CASE WHEN ord.position IS NULL THEN 1 ELSE 0 END,ord.position,u.name").all();return out({dealers:r.results||[]});
 }
 if(p==='/api/admin/dealers/featured'&&method==='POST'){
  const u=await user(req,env.DB);if(!u||u.is_admin!==1)return out({error:'Vetëm administratori.'},403);const b=await body(req);
@@ -225,7 +232,7 @@ if(p==='/api/dealers'&&method==='GET'){
  // Parameterized search: matches partial names and cities, including mixed case.
  const q=str(url.searchParams.get('q'),80).trim();
  const city=str(url.searchParams.get('city'),70).trim();
- const sql="SELECT u.id,u.name,COUNT(c.id) AS car_count,p.slug,p.address,p.city,p.phone,p.whatsapp,p.hours,p.instagram,p.facebook,p.logo_url,p.cover_url,COALESCE(p.featured,0) featured FROM as_users u LEFT JOIN as_cars c ON c.user_id=u.id AND c.status='active' LEFT JOIN as_dealer_profiles p ON p.user_id=u.id WHERE u.role='autosallon' AND (?='' OR instr(lower(u.name),lower(?))>0 OR instr(lower(COALESCE(p.city,'')),lower(?))>0) AND (?='' OR lower(COALESCE(p.city,''))=lower(?)) GROUP BY u.id,u.name ORDER BY featured DESC,car_count DESC,u.name ASC LIMIT 200";
+ const sql="SELECT u.id,u.name,COUNT(c.id) AS car_count,p.slug,p.address,p.city,p.phone,p.whatsapp,p.hours,p.instagram,p.facebook,p.logo_url,p.cover_url,COALESCE(p.featured,0) featured FROM as_users u LEFT JOIN as_cars c ON c.user_id=u.id AND c.status='active' LEFT JOIN as_dealer_profiles p ON p.user_id=u.id LEFT JOIN as_dealer_order ord ON ord.user_id=u.id WHERE u.role='autosallon' AND (?='' OR instr(lower(u.name),lower(?))>0 OR instr(lower(COALESCE(p.city,'')),lower(?))>0) AND (?='' OR lower(COALESCE(p.city,''))=lower(?)) GROUP BY u.id,u.name ORDER BY CASE WHEN ord.position IS NULL THEN 1 ELSE 0 END,ord.position,featured DESC,car_count DESC,u.name ASC LIMIT 200";
  const r=await env.DB.prepare(sql).bind(q,q,q,city,city).all();return out({dealers:r.results||[]});
 }
 async function attachPhotos(rows){if(!rows.length)return rows;const ids=rows.map(x=>x.id);const marks=ids.map(()=>'?').join(',');const found=await env.DB.prepare(`SELECT car_id,photo_key FROM as_car_photos WHERE car_id IN (${marks}) ORDER BY position ASC,created_at ASC`).bind(...ids).all();const by=new Map();for(const x of found.results||[]){if(!by.has(x.car_id))by.set(x.car_id,[]);by.get(x.car_id).push(x.photo_key)}return rows.map(r=>({...r,photos:by.get(r.id)|| (r.photo_key?[r.photo_key]:[])}))}
