@@ -89,7 +89,7 @@ if((p==='/api/auth/forgot-password'||p==='/api/auth/reset-password')&&method==='
 if(p.startsWith('/api/admin/')){
  const u=await user(req,env.DB);if(!u||u.is_admin!==1)return out({error:'Vetëm administratori.'},403);
  if(p==='/api/admin/summary'&&method==='GET'){
-  const [users,cars,dealers]=await Promise.all([env.DB.prepare('SELECT COUNT(*) AS n FROM as_users').first(),env.DB.prepare('SELECT COUNT(*) AS n FROM as_cars').first(),env.DB.prepare("SELECT COUNT(*) AS n FROM as_users WHERE role='autosallon'").first()]);return out({users:users.n,cars:cars.n,dealers:dealers.n});
+  const [users,cars,dealers,active,sold]=await Promise.all([env.DB.prepare('SELECT COUNT(*) AS n FROM as_users').first(),env.DB.prepare('SELECT COUNT(*) AS n FROM as_cars').first(),env.DB.prepare("SELECT COUNT(*) AS n FROM as_users WHERE role='autosallon'").first(),env.DB.prepare("SELECT COUNT(*) AS n FROM as_cars WHERE status='active'").first(),env.DB.prepare("SELECT COUNT(*) AS n FROM as_cars WHERE status='sold'").first()]);return out({users:users.n,cars:cars.n,dealers:dealers.n,active:active.n,sold:sold.n});
  }
  if(p==='/api/admin/users'&&method==='GET'){
   const r=await env.DB.prepare('SELECT id,name,email,role,is_admin,created_at FROM as_users ORDER BY created_at DESC LIMIT 200').all();return out({users:r.results||[]});
@@ -102,6 +102,19 @@ if(p.startsWith('/api/admin/')){
   const b=await body(req);if(!['active','deleted'].includes(b?.status))return out({error:'Status i pavlefshëm.'},400);
   const r=await env.DB.prepare('UPDATE as_cars SET status=? WHERE id=?').bind(b.status,carMatch[1]).run();return out({ok:true,changed:r.meta.changes});
  }
+if(p==='/api/admin/dealers'&&method==='GET'){
+ const u=await user(req,env.DB);if(!u||u.is_admin!==1)return out({error:'Vetëm administratori.'},403);
+ const r=await env.DB.prepare("SELECT u.id,u.name,COALESCE(p.featured,0) featured FROM as_users u LEFT JOIN as_dealer_profiles p ON p.user_id=u.id WHERE u.role='autosallon' ORDER BY u.name").all();return out({dealers:r.results||[]});
+}
+if(p==='/api/admin/dealers/featured'&&method==='POST'){
+ const u=await user(req,env.DB);if(!u||u.is_admin!==1)return out({error:'Vetëm administratori.'},403);const b=await body(req);
+ if(!/^[0-9a-f-]{36}$/.test(String(b?.id||'')))return out({error:'ID i pavlefshëm'},400);
+ await env.DB.prepare("INSERT INTO as_dealer_profiles (user_id,slug,featured) SELECT id,lower(replace(name,' ','-'))||'-'||substr(id,1,6),? FROM as_users WHERE id=? AND role='autosallon' ON CONFLICT(user_id) DO UPDATE SET featured=excluded.featured").bind(b.featured?1:0,b.id).run();return out({ok:true});
+}
+if(p==='/api/admin/delete-requests'&&method==='GET'){
+ const u=await user(req,env.DB);if(!u||u.is_admin!==1)return out({error:'Vetëm administratori.'},403);
+ const r=await env.DB.prepare('SELECT r.user_id,r.created_at,u.name,u.email FROM as_deletion_requests r JOIN as_users u ON u.id=r.user_id ORDER BY r.created_at DESC').all();return out({requests:r.results||[]});
+}
  return out({error:'Endpoint not found'},404);
 }
 
@@ -199,19 +212,6 @@ if(p==='/api/dealer/profile'&&method==='POST'){
  }
  try{await env.DB.prepare(`INSERT INTO as_dealer_profiles (user_id,slug,address,city,phone,whatsapp,hours,instagram,facebook,logo_url,cover_url) VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET slug=excluded.slug,address=excluded.address,city=excluded.city,phone=excluded.phone,whatsapp=excluded.whatsapp,hours=excluded.hours,instagram=excluded.instagram,facebook=excluded.facebook,logo_url=excluded.logo_url,cover_url=excluded.cover_url`).bind(u.id,slug,...vals).run()}
  catch(e){if(String(e).includes('UNIQUE'))return out({error:'Ky link përdoret nga një autosallon tjetër.'},409);throw e}return out({ok:true,slug});
-}
-if(p==='/api/admin/dealers'&&method==='GET'){
- const u=await user(req,env.DB);if(!u||u.is_admin!==1)return out({error:'Vetëm administratori.'},403);
- const r=await env.DB.prepare("SELECT u.id,u.name,COALESCE(p.featured,0) featured FROM as_users u LEFT JOIN as_dealer_profiles p ON p.user_id=u.id WHERE u.role='autosallon' ORDER BY u.name").all();return out({dealers:r.results||[]});
-}
-if(p==='/api/admin/dealers/featured'&&method==='POST'){
- const u=await user(req,env.DB);if(!u||u.is_admin!==1)return out({error:'Vetëm administratori.'},403);const b=await body(req);
- if(!/^[0-9a-f-]{36}$/.test(String(b?.id||'')))return out({error:'ID i pavlefshëm'},400);
- await env.DB.prepare("INSERT INTO as_dealer_profiles (user_id,slug,featured) SELECT id,lower(replace(name,' ','-'))||'-'||substr(id,1,6),? FROM as_users WHERE id=? AND role='autosallon' ON CONFLICT(user_id) DO UPDATE SET featured=excluded.featured").bind(b.featured?1:0,b.id).run();return out({ok:true});
-}
-if(p==='/api/admin/delete-requests'&&method==='GET'){
- const u=await user(req,env.DB);if(!u||u.is_admin!==1)return out({error:'Vetëm administratori.'},403);
- const r=await env.DB.prepare('SELECT r.user_id,r.created_at,u.name,u.email FROM as_deletion_requests r JOIN as_users u ON u.id=r.user_id ORDER BY r.created_at DESC').all();return out({requests:r.results||[]});
 }
 // Public showroom lookup for shared links.
 const dealerSlugMatch=p.match(/^\/api\/dealers\/slug\/([a-z0-9-]+)\/?$/i);
